@@ -1,0 +1,55 @@
+name: bot
+
+on:
+  schedule:
+    - cron: "0 8 * * *"
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+    inputs:
+      dry:
+        description: "Só gerar, não publicar"
+        default: "0"
+
+concurrency:
+  group: bot
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  comentar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 280
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install --quiet instagrapi
+
+      - name: Restaurar sessão
+        env:
+          SESS: ${{ secrets.IG_SESSION_B64 }}
+        run: |
+          echo "$SESS" | base64 -d > session.json
+          test -s session.json
+
+      - name: Correr
+        env:
+          AUTO: "1"
+          DRY: ${{ github.event.inputs.dry }}
+          IG_PROXY: ${{ secrets.IG_PROXY }}
+        run: python bot.py
+
+      - name: Gravar estado
+        if: always()
+        run: |
+          git config user.name "bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -A state.json mencoes_invalidas.txt comentarios.log || true
+          git commit -m "estado $(date -u +%FT%TZ)" || echo "sem alterações"
+          git pull --rebase --autostash || true
+          git push || echo "push falhou"
